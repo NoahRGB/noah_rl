@@ -1,13 +1,75 @@
+title: "testing"
+
+hydra:
+  run:
+    dir: "results/logs/${title}_${now:%H%M%S}"
 
 env_name: "CartPole-v1"
 env_kwargs:
-  render_mode: "human"
+  render_mode:
+num_envs: 4
+wrappers:
+  # atari:
+  #   noop_max: 30
+  #   frame_skip: 4
+  #   terminal_on_life_loss: False
+  #   screen_size: 84
+  #   grayscale_obs: True
+  #   grayscale_newaxis: False
+  # frame_stack:
+  #   stack_size: 4
 
+save_network: True
 seed: 1
-timesteps: 100_000
-rollout_len: 100
-epochs: 3
-minibatch_size: 32
-lr: 0.0001
+timesteps: 1_000_000
+rollout_len: 128 
+epochs: 2 
+minibatch_size: 32 
+lr: 0.001
+gamma: 0.99
+lam: 0.95
+epsilon: 0.2
+entropy_weight: 0.01
+value_weight: 0.5
+cgn: 0.5
+load_path:
 
+network_architecture:
+  # shared_enc:
+  #   - type: "CONV"
+  #     in: "IN"
+  #     out: 16
+  #     kernel: 8
+  #     stride: 4
+  #     activation: "RELU"
+  #   - type: "CONV"
+  #     in: 16
+  #     out: 32
+  #     kernel: 4
+  #     stride: 2
+  #     activation: "RELU"
+  #   - type: "FLATTEN"
+  #   - type: "LINEAR"
+  #     in: 2592
+  #     out: 256
+  #     activation: "RELU"
 
+  actor_enc:
+    - type: "LINEAR"
+      in: "IN"
+      out: 64
+      activation: "TANH"
+    - type: "LINEAR"
+      in: 64
+      out: 64
+      activation: "TANH"
+
+  value_enc:
+    - type: "LINEAR"
+      in: "IN"
+      out: 64
+      activation: "TANH"
+    - type: "LINEAR"
+      in: 64
+      out: 64
+      activation: "TANH"
