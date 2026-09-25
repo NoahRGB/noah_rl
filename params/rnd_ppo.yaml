@@ -4,10 +4,9 @@ hydra:
   run:
     dir: "results/logs/${title}_${now:%H%M%S}"
 
-env_name: "ThrustEnv"
+env_name: "CartPole-v1"
 env_kwargs:
   render_mode:
-  obs_type: "game_state"
 num_envs: 4
 wrappers:
   # atari:
@@ -21,19 +20,23 @@ wrappers:
   #   stack_size: 4
 
 save_network: False 
-seed: 1
+seed: 1 
 timesteps: 1_000_000
 rollout_len: 128 
 epochs: 2 
 minibatch_size: 32 
 lr: 0.001
-gamma: 0.99
+extrinsic_gamma: 0.99
+intrinsic_gamma: 0.99
+warmup_steps: 10_000
+extrinsic_adv_coef: 2
+intrinsic_adv_coef: 1
 lam: 0.95
 epsilon: 0.2
 entropy_weight: 0.01
 value_weight: 0.5
 cgn: 0.5
-load_path:
+load_path: # "results/logs/testing_111242/network.pt"
 
 network_architecture:
   # shared_enc:
@@ -74,3 +77,32 @@ network_architecture:
       in: 64
       out: 64
       activation: "TANH"
+
+
+  target_enc:
+    - type: "LINEAR"
+      in: "IN"
+      out: 256
+      activation: "RELU"
+    - type: "LINEAR"
+      in: 256
+      out: 128
+      activation: "RELU"
+    - type: "LINEAR"
+      in: 128
+      out: 128
+      activation: "RELU"
+
+  predictor_enc:
+    - type: "LINEAR"
+      in: "IN"
+      out: 256
+      activation: "RELU"
+    - type: "LINEAR"
+      in: 256
+      out: 128
+      activation: "RELU"
+    - type: "LINEAR"
+      in: 128
+      out: 128
+      activation: "RELU"

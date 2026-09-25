@@ -19,6 +19,11 @@ WRAPPERS = {
     "resize": gym.wrappers.ResizeObservation,
 }
 
+gym.register(
+    id="ThrustEnv",
+    entry_point="src.thrust_gym.thrust_gymenv:ThrustEnv",
+)
+
 class GymEnv:
     def __init__(self, env_name: str, num_envs: int, seed: int|None = None, wrappers: dict|None = None, **env_kwargs):
         self.env_name = env_name
