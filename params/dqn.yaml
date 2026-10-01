@@ -1,0 +1,53 @@
+title: "level2test"
+
+hydra:
+  run:
+    dir: "results/logs/${title}_${now:%H%M%S}"
+
+env_name: "CartPole-v1"
+env_kwargs:
+  render_mode:
+
+num_envs: 1
+wrappers:
+  # atari:
+  #   noop_max: 30
+  #   frame_skip: 4
+  #   terminal_on_life_loss: False
+  #   screen_size: 84
+  #   grayscale_obs: True
+  #   grayscale_newaxis: False
+  # frame_stack:
+  #   stack_size: 4
+
+save_network: False 
+seed: 1
+timesteps: 10_000_000
+lr: 0.001
+replay_size: 100_000
+minibatch_size: 64 
+target_update_interval: 10
+update_freq: 256 
+gradient_steps: 128
+warmup_steps: 1000
+epsilon_scheduler:
+  type: "linear"
+  params:
+    start_value: 1.0
+    end_value: 0.04
+    steps: 8000
+gamma: 0.99
+cgn: 0.5
+load_path:
+
+network_architecture:
+  qnet_enc:
+    - type: "LINEAR"
+      in: "IN"
+      out: 256
+      activation: "RELU"
+    - type: "LINEAR"
+      in: 256
+      out: 256
+      activation: "RELU"
+  

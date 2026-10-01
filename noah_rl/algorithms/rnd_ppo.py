@@ -19,32 +19,43 @@ from noah_rl.utils.logging import Logger
 from noah_rl.utils.normalisation import Normaliser
 
 class RNDTargetNetwork(torch.nn.Module):
-    def __init__(self, architecture: dict, state_dim: tuple):
+    def __init__(self, architecture: dict, state_dim: tuple, is_pixels: bool):
         super(RNDTargetNetwork, self).__init__()
+        self.is_pixels = is_pixels
 
         self.target_enc = Encoder(architecture["target_enc"], input_shape=state_dim)
         self.target_enc_output = self.target_enc.encoder_output
-        self.target_head = torch.nn.Linear(self.target_enc_output, 64)
+        self.target_head = torch.nn.Linear(self.target_enc_output, 512)
 
     def forward(self, inp):
-        target_enc_out = self.target_enc(inp)
+        inp_to_use = inp
+        if self.is_pixels:
+            inp_to_use = inp[:, -1:]
+
+        target_enc_out = self.target_enc(inp_to_use)
         return self.target_head(target_enc_out)
 
 class RNDPredictorNetwork(torch.nn.Module):
-    def __init__(self, architecture: dict, state_dim: tuple):
+    def __init__(self, architecture: dict, state_dim: tuple, is_pixels: bool):
         super(RNDPredictorNetwork, self).__init__()
+        self.is_pixels = is_pixels
 
         self.predictor_enc = Encoder(architecture["predictor_enc"], input_shape=state_dim)
         self.predictor_enc_output = self.predictor_enc.encoder_output
-        self.predictor_head = torch.nn.Linear(self.predictor_enc_output, 64)
+        self.predictor_head = torch.nn.Linear(self.predictor_enc_output, 512)
 
     def forward(self, inp):
-        predictor_enc_out = self.predictor_enc(inp)
+        inp_to_use = inp
+        if self.is_pixels:
+            inp_to_use = inp[:, -1:]
+
+        predictor_enc_out = self.predictor_enc(inp_to_use)
         return self.predictor_head(predictor_enc_out)
 
 class ActorCriticNetwork(torch.nn.Module):
-    def __init__(self, architecture: dict, state_dim: tuple, action_space: gym.Space):
+    def __init__(self, architecture: dict, state_dim: tuple, action_space: gym.Space, is_pixels: bool):
         super(ActorCriticNetwork, self).__init__()
+        self.is_pixels = is_pixels
 
         if "shared_enc" in architecture:
             self.using_shared_enc = True
@@ -62,28 +73,47 @@ class ActorCriticNetwork(torch.nn.Module):
         self.intrinsic_value_head = torch.nn.Linear(self.value_enc_output, 1)
 
     def get_actor(self, inp):
+        inp_to_use = inp
+        if self.is_pixels:
+            inp_to_use = inp / 255.0
+
         if self.using_shared_enc:
-            enc_out = self.shared_enc(inp)
+            enc_out = self.shared_enc(inp_to_use)
         else:
-            enc_out = self.actor_enc(inp)
+            enc_out = self.actor_enc(inp_to_use)
         return self.actor_head(enc_out)
     
     def get_value(self, inp):
+        inp_to_use = inp
+        if self.is_pixels:
+            inp_to_use = inp / 255.0
+
         if self.using_shared_enc:
-            enc_out = self.shared_enc(inp)
+            enc_out = self.shared_enc(inp_to_use)
         else:
-            enc_out = self.value_enc(inp)
+            enc_out = self.value_enc(inp_to_use)
         return self.extrinsic_value_head(enc_out), self.intrinsic_value_head(enc_out)    
 
 def train(cfg: DictConfig, hydra_dir: str):
     seed(cfg.seed)
     env = GymEnv(cfg.env_name, cfg.num_envs, seed=cfg.seed, wrappers=cfg.wrappers, **cfg.env_kwargs)
-    network = ActorCriticNetwork(cfg.network_architecture, env.state_dim, env.single_action_space)
-    target_network = RNDTargetNetwork(cfg.network_architecture, env.state_dim)
-    predictor_network = RNDPredictorNetwork(cfg.network_architecture, env.state_dim)
+    network = ActorCriticNetwork(cfg.network_architecture, env.state_dim, env.single_action_space, cfg.is_pixels)
+    target_network = RNDTargetNetwork(cfg.network_architecture, env.state_dim, cfg.is_pixels)
+    predictor_network = RNDPredictorNetwork(cfg.network_architecture, env.state_dim, cfg.is_pixels)
     optim = torch.optim.Adam(network.parameters(), lr=cfg.lr)
     predictor_optim = torch.optim.Adam(predictor_network.parameters(), lr=cfg.lr)
     logger = Logger(cfg.num_envs, cfg.title, hydra_dir, tensorboard=True)
+
+    # this makes the prediction problem actually hard by initialising
+    # the target/predictor networks with some values
+    for m in target_network.modules():
+        if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv2d):
+            torch.nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            torch.nn.init.zeros_(m.bias)
+    for m in predictor_network.modules():
+        if isinstance(m, torch.nn.Linear) or isinstance(m, torch.nn.Conv2d):
+            torch.nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            torch.nn.init.zeros_(m.bias)
 
     obs_normaliser = Normaliser(env.state_dim)
     intrinsic_reward_normaliser = Normaliser((1,), use_mean=False)
@@ -104,11 +134,14 @@ def train(cfg: DictConfig, hydra_dir: str):
 
     # need to randomly step through the environment in order to establish
     # a running mu/stdev for observations
+    print("random stepping started")
     for warmup_step in range(cfg.warmup_steps):
         actions = env.action_space.sample()
         sprimes, rewards, is_terms, is_truncs, info = env.step(actions)
+
         obs_normaliser.add_batch(states)
         states = env.reset_finished_envs(sprimes, is_terms, is_truncs)
+    print("random stepping done")
 
     num_rollouts = cfg.timesteps // (cfg.rollout_len * cfg.num_envs)
     for rollout in range(num_rollouts):
@@ -124,6 +157,7 @@ def train(cfg: DictConfig, hydra_dir: str):
 
         with torch.no_grad():
             # unroll over rollout_len steps and store in buffers
+
             for timestep in range(cfg.rollout_len):
                 action_dist = network.get_actor(torch.from_numpy(states).float())
                 actions = action_dist.sample()
@@ -150,7 +184,8 @@ def train(cfg: DictConfig, hydra_dir: str):
                 # update the intrinsic reward normaliser + running return calculation
                 running_intrinsic_returns = running_intrinsic_returns * cfg.intrinsic_gamma + intrinsic_reward.cpu().numpy()
                 intrinsic_reward_normaliser.add_batch(running_intrinsic_returns)
-                logger.log_stats({"raw_intrinsic_reward": intrinsic_reward.mean()})
+
+            logger.log_stats({"raw_intrinsic_reward": intrinsic_reward_buffer.mean().item()})
 
             # rollout is over, get state values across the batch
             T, N = cfg.rollout_len, cfg.num_envs

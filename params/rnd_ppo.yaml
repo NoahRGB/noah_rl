@@ -4,11 +4,24 @@ hydra:
   run:
     dir: "results/logs/${title}_${now:%H%M%S}"
 
-env_name: "CartPole-v1"
+env_name: "ThrustEnv"
 env_kwargs:
-  render_mode:
-num_envs: 4
+  render_mode: 
+  obs_type: "game_state"
+  max_steps: 250 
+  num_scanners: 0 
+  game_level: 1
+  aggro: 0
+
+num_envs: 1 
 wrappers:
+  # greyscale:
+  #   keep_dim: False
+  # resize:
+  #   shape: [84,84]
+  # frame_stack:
+  #   stack_size: 4
+    
   # atari:
   #   noop_max: 30
   #   frame_skip: 4
@@ -16,93 +29,137 @@ wrappers:
   #   screen_size: 84
   #   grayscale_obs: True
   #   grayscale_newaxis: False
-  # frame_stack:
-  #   stack_size: 4
 
-save_network: False 
+
+save_network: True
+is_pixels: False 
 seed: 1 
-timesteps: 1_000_000
-rollout_len: 128 
-epochs: 2 
-minibatch_size: 32 
-lr: 0.001
-extrinsic_gamma: 0.99
+timesteps: 20_000_000
+rollout_len: 128
+epochs: 4 
+minibatch_size: 1024 
+lr: 0.0001
+extrinsic_gamma: 0.999
 intrinsic_gamma: 0.99
-warmup_steps: 10_000
+warmup_steps: 1 
 extrinsic_adv_coef: 2
 intrinsic_adv_coef: 1
 lam: 0.95
-epsilon: 0.2
-entropy_weight: 0.01
+epsilon: 0.1
+entropy_weight: 0.001
 value_weight: 0.5
 cgn: 0.5
-load_path: # "results/logs/testing_111242/network.pt"
+load_path: # "results/logs/testing_112301/network.pt"
 
 network_architecture:
-  # shared_enc:
-  #   - type: "CONV"
-  #     in: "IN"
-  #     out: 16
-  #     kernel: 8
-  #     stride: 4
-  #     activation: "RELU"
-  #   - type: "CONV"
-  #     in: 16
-  #     out: 32
-  #     kernel: 4
-  #     stride: 2
-  #     activation: "RELU"
-  #   - type: "FLATTEN"
-  #   - type: "LINEAR"
-  #     in: 2592
-  #     out: 256
-  #     activation: "RELU"
-
-  actor_enc:
-    - type: "LINEAR"
+  shared_enc:
+    - type: "CONV"
       in: "IN"
-      out: 64
-      activation: "TANH"
+      out: 16
+      kernel: 8
+      stride: 4
+      activation: "RELU"
+    - type: "CONV"
+      in: 16
+      out: 32
+      kernel: 4
+      stride: 2
+      activation: "RELU"
+    - type: "FLATTEN"
     - type: "LINEAR"
-      in: 64
-      out: 64
-      activation: "TANH"
-
-  value_enc:
-    - type: "LINEAR"
-      in: "IN"
-      out: 64
-      activation: "TANH"
-    - type: "LINEAR"
-      in: 64
-      out: 64
-      activation: "TANH"
+      in: 2592
+      out: 256
+      activation: "RELU"
 
 
   target_enc:
+    - type: "CONV"
+      in: 1
+      out: 16
+      kernel: 8
+      stride: 4
+      activation: "RELU"
+    - type: "CONV"
+      in: 16
+      out: 32
+      kernel: 4
+      stride: 2
+      activation: "RELU"
+    - type: "FLATTEN"
     - type: "LINEAR"
-      in: "IN"
+      in: 2592
       out: 256
-      activation: "RELU"
-    - type: "LINEAR"
-      in: 256
-      out: 128
-      activation: "RELU"
-    - type: "LINEAR"
-      in: 128
-      out: 128
       activation: "RELU"
 
   predictor_enc:
+    - type: "CONV"
+      in: 1 
+      out: 16
+      kernel: 8
+      stride: 4
+      activation: "RELU"
+    - type: "CONV"
+      in: 16
+      out: 32
+      kernel: 4
+      stride: 2
+      activation: "RELU"
+    - type: "FLATTEN"
     - type: "LINEAR"
-      in: "IN"
+      in: 2592
       out: 256
       activation: "RELU"
-    - type: "LINEAR"
-      in: 256
-      out: 128
-      activation: "RELU"
-    - type: "LINEAR"
-      in: 128
-      out: 128
-      activation: "RELU"
+
+
+
+
+
+
+
+  # actor_enc:
+  #   - type: "LINEAR"
+  #     in: "IN"
+  #     out: 64
+  #     activation: "TANH"
+  #   - type: "LINEAR"
+  #     in: 64
+  #     out: 64
+  #     activation: "TANH"
+  #
+  # value_enc:
+  #   - type: "LINEAR"
+  #     in: "IN"
+  #     out: 64
+  #     activation: "TANH"
+  #   - type: "LINEAR"
+  #     in: 64
+  #     out: 64
+  #     activation: "TANH"
+  #
+  # target_enc:
+  #   - type: "LINEAR"
+  #     in: "IN"
+  #     out: 256
+  #     activation: "RELU"
+  #   - type: "LINEAR"
+  #     in: 256
+  #     out: 128
+  #     activation: "RELU"
+  #   - type: "LINEAR"
+  #     in: 128
+  #     out: 128
+  #     activation: "RELU"
+  #
+  # predictor_enc:
+  #   - type: "LINEAR"
+  #     in: "IN"
+  #     out: 256
+  #     activation: "RELU"
+  #   - type: "LINEAR"
+  #     in: 256
+  #     out: 128
+  #     activation: "RELU"
+  #   - type: "LINEAR"
+  #     in: 128
+  #     out: 128
+  #     activation: "RELU"

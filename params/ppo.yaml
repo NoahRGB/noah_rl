@@ -1,4 +1,4 @@
-title: "testing"
+title: "shootingtests"
 
 hydra:
   run:
@@ -6,10 +6,25 @@ hydra:
 
 env_name: "ThrustEnv"
 env_kwargs:
-  render_mode:
+  render_mode: 
   obs_type: "game_state"
-num_envs: 4
+  max_steps: 250
+  num_scanners: 20 
+  game_level: -1 
+  aggro: 0
+  exploring_starts: True 
+
+num_envs: 32 
 wrappers:
+  # greyscale:
+  #   keep_dim: False
+  # resize:
+  #   shape: [84,84]
+  # frame_stack:
+  #   stack_size: 4
+
+
+
   # atari:
   #   noop_max: 30
   #   frame_skip: 4
@@ -20,20 +35,20 @@ wrappers:
   # frame_stack:
   #   stack_size: 4
 
-save_network: False 
+save_network: True
 seed: 1
-timesteps: 1_000_000
+timesteps: 10_000_000
 rollout_len: 128 
-epochs: 2 
-minibatch_size: 32 
-lr: 0.001
+epochs: 5 
+minibatch_size: 128 
+lr: 0.0003
 gamma: 0.99
 lam: 0.95
 epsilon: 0.2
-entropy_weight: 0.01
+entropy_weight: 0.04
 value_weight: 0.5
 cgn: 0.5
-load_path:
+load_path: # "results/temp/network.pt"
 
 network_architecture:
   # shared_enc:

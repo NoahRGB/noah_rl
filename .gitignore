@@ -5,6 +5,7 @@ logs/
 outputs/
 output/
 runs/
+clear_logs.sh
 
 
 

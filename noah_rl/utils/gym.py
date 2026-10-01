@@ -9,6 +9,9 @@ import gymnasium as gym
 import numpy as np
 import ale_py
 
+def resizewrapper(env, shape):
+    return gym.wrappers.ResizeObservation(env, tuple(shape))
+
 # supported wrappers and their classes
 WRAPPERS = {
     "normalise_obs": gym.wrappers.NormalizeObservation,
@@ -16,7 +19,7 @@ WRAPPERS = {
     "frame_stack": gym.wrappers.FrameStackObservation,
     "atari": gym.wrappers.AtariPreprocessing,
     "greyscale": gym.wrappers.GrayscaleObservation,
-    "resize": gym.wrappers.ResizeObservation,
+    "resize": resizewrapper,
 }
 
 gym.register(
