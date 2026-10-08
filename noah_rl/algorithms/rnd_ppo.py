@@ -1,4 +1,7 @@
 # NoahRGB 09/2026
+#
+# UNFINISHED
+#
 # PPO implementation with RND for intrinsic motivation/exploration 
 # (https://arxiv.org/abs/1810.12894)
 #

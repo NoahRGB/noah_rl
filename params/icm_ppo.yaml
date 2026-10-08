@@ -1,20 +1,18 @@
-title: "shootingtests"
+title: "tests"
 
 hydra:
   run:
     dir: "results/logs/${title}_${now:%H%M%S}"
 
-env_name: "ThrustEnv"
+env_name: "CartPole-v1"
 env_kwargs:
   render_mode: 
-  obs_type: "game_state"
-  max_steps: 400 
-  num_scanners: 20 
-  game_level: -1 
-  aggro: 0
-  exploring_starts: True 
-  reverse_gravity: True 
-  display_scale: 1
+  # obs_type: "game_state"
+  # max_steps: 250
+  # num_scanners: 20 
+  # game_level: -1 
+  # aggro: 0
+  # exploring_starts: True 
 
 num_envs: 32 
 wrappers:
@@ -37,7 +35,7 @@ wrappers:
   # frame_stack:
   #   stack_size: 4
 
-save_network: True
+save_network: False 
 seed: 1
 timesteps: 10_000_000
 rollout_len: 128 
@@ -53,7 +51,46 @@ cgn: 0.5
 load_path: # "results/temp/network.pt"
 
 network_architecture:
-  # shared_enc:
+
+  icm_enc:
+    - type: "LINEAR"
+      in: "IN"
+      out: 256 
+      activation: "RELU"
+    - type: "LINEAR"
+      in: 256 
+      out: 256 
+      activation: "RELU"
+
+  icm_inv_enc:
+    - type: "LINEAR"
+      in: "IN"
+      out: 256 
+      activation: "RELU"
+
+  icm_forward_enc:
+    - type: "LINEAR"
+      in: "IN"
+      out: 256 
+      activation: "RELU"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  # shared_ppo_enc:
   #   - type: "CONV"
   #     in: "IN"
   #     out: 16
