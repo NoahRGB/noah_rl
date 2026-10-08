@@ -4,7 +4,7 @@ hydra:
   run:
     dir: "results/logs/${title}_${now:%H%M%S}"
 
-env_name: "Pendulum-v1"
+env_name: "MountainCarContinuous-v0"
 env_kwargs:
   render_mode:
 
@@ -12,7 +12,7 @@ num_envs: 1
 wrappers:
 
 
-save_network: False 
+save_network: True 
 seed: 1
 timesteps: 10_000_000
 lr: 0.001

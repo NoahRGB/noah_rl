@@ -121,6 +121,15 @@ def train(cfg: DictConfig, hydra_dir: str):
         log_alpha = torch.nn.Parameter(torch.tensor(np.log(cfg.alpha_start)))
         alpha_optim = torch.optim.Adam([log_alpha], lr=cfg.lr)
 
+    if cfg.load_path is not None:
+        d = torch.load(cfg.load_path, weights_only=False)
+        actor.load_state_dict(d["actor"]); actor_optim.load_state_dict(d["actor_optim"])
+        qfunc1.load_state_dict(d["qfunc1"]); qfunc1_optim.load_state_dict(d["qfunc1_optim"])
+        qfunc2.load_state_dict(d["qfunc2"]); qfunc2_optim.load_state_dict(d["qfunc2_optim"])
+        if cfg.auto_alpha:
+            with torch.no_grad():
+                log_alpha.fill_(d["log_alpha"]); alpha_optim.load_state_dict(d["alpha_optim"])
+
     replay = ReplayMemory(size=cfg.replay_size, state_dim=env.state_dim, action_dim=env.action_dim) 
 
     states, _ = env.reset()
@@ -157,6 +166,7 @@ def train(cfg: DictConfig, hydra_dir: str):
 
 
         # rollout finished, update time
+        stats =  {"policy_loss": [], "qfunc1_loss": [], "qfunc2_loss": [], "alpha_loss": []}
         for grad_update in range(cfg.gradient_steps):
 
             (batch_states, batch_actions, batch_rewards, batch_next_states, batch_is_terms, batch_is_truncs), sample_size = replay.sample(cfg.minibatch_size)
@@ -238,10 +248,17 @@ def train(cfg: DictConfig, hydra_dir: str):
                         target_param.mul_(1 - cfg.tau).add_(cfg.tau * param)
 
 
+                stats["policy_loss"].append(policy_loss.item()); stats["qfunc1_loss"].append(qfunc1_loss.item())
+                stats["qfunc2_loss"].append(qfunc2_loss.item());
+                if cfg.auto_alpha: stats["alpha_loss"].append(alpha_loss.item())
 
-
-
-
+        logger.log_stats({name: np.mean(loss) for name, loss in stats.items()})
+        if cfg.save_network: logger.log_network({
+            "actor": actor.state_dict(), "actor_optim": actor_optim.state_dict(),
+            "qfunc1": qfunc1.state_dict(), "qfunc1_optim": qfunc1_optim.state_dict(),
+            "qfunc2": qfunc2.state_dict(), "qfunc2_optim": qfunc2_optim.state_dict(),
+            "log_alpha": 0 if not cfg.auto_alpha else log_alpha.item(), "alpha_optim": 0 if not cfg.auto_alpha else alpha_optim.state_dict() 
+        })
 
 @hydra.main(config_path="../../params", config_name="sac", version_base=None)
 def main(cfg: DictConfig):

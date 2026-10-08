@@ -155,6 +155,8 @@ def train(cfg: DictConfig, hydra_dir: str):
                     torch.nn.utils.clip_grad_norm_(network.parameters(), cfg.cgn)
                 optim.step()
 
+                stats["qnet_loss"].append(loss.item())
+
         logger.log_stats({name: np.mean(loss) for name, loss in stats.items()})
         if cfg.save_network: logger.log_network({"net": network.state_dict(), "target_net": target_network.state_dict(), "optim": optim.state_dict()})
 
