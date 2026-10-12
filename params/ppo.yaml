@@ -15,6 +15,7 @@ env_kwargs:
   exploring_starts: True 
   reverse_gravity: True 
   display_scale: 1
+  action_space: "continuous"
 
 num_envs: 32 
 wrappers:

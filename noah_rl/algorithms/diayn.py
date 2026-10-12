@@ -150,145 +150,187 @@ def train(cfg: DictConfig, hydra_dir: str):
 
     replay = ReplayMemory(size=cfg.replay_size, state_dim=env.state_dim, action_dim=env.action_dim) 
 
-    states, _ = env.reset()
-    skill = skills_distribution.sample()
+    if not cfg.do_eval:
+        states, _ = env.reset()
+        skill = skills_distribution.sample()
 
-
-    # for warmup_step in range(cfg.warmup_steps):
-    #     actions = env.action_space.sample()
-    #     sprimes, rewards, is_terms, is_truncs, info = env.step(actions)
-    #     replay.add(states, actions, rewards, sprimes, is_terms, is_truncs)
-    #     states = env.reset_finished_envs(sprimes, is_terms, is_truncs)
-
-
-    num_rollouts = cfg.timesteps // cfg.update_freq
-    for rollout in range(num_rollouts):
-        
-        for timestep in range(cfg.update_freq):
+        for warmup_step in range(cfg.warmup_steps):
 
             with torch.no_grad(): 
                 skill_one_hot = torch.nn.functional.one_hot(skill, cfg.num_skills).unsqueeze(0).float()
                 action_dist = actor(torch.concat([torch.from_numpy(states).float(), skill_one_hot], dim=-1))
                 u = action_dist.rsample()
-                actions = torch.tanh(u) 
+                actions = torch.tanh(u)
 
             sprimes, rewards, is_terms, is_truncs, info = env.step(actions.cpu().numpy())
-            
+
             with torch.no_grad():
                 discriminator_logits = discriminator(torch.from_numpy(sprimes).float())
                 discriminator_logq = torch.log_softmax(discriminator_logits, dim=-1).gather(-1, skill.view(1, 1)).squeeze(-1)
                 diayn_rewards = discriminator_logq - skills_distribution.log_prob(skill)
-
-            logger.log_episodes(info)
 
             replay.add(states, actions, diayn_rewards.cpu().numpy(), skill, sprimes, is_terms, is_truncs)
 
             # if the episode ended, a new skill needs to be chosen
             if "episode" in info:
                 skill = skills_distribution.sample()
-
             states = env.reset_finished_envs(sprimes, is_terms, is_truncs)
 
 
-        # rollout finished, update time
-        stats =  {"policy_loss": [], "qfunc1_loss": [], "qfunc2_loss": [], "discriminator_loss": [], "mean_reward": []}
-        for grad_update in range(cfg.gradient_steps):
+        num_rollouts = cfg.timesteps // cfg.update_freq
+        for rollout in range(num_rollouts):
+            
+            for timestep in range(cfg.update_freq):
 
-            (batch_states, batch_actions, batch_rewards, batch_skills, batch_next_states, batch_is_terms, batch_is_truncs), sample_size = replay.sample(cfg.minibatch_size)
-            masks = 1 - (batch_is_terms)
-            skills_one_hot = torch.nn.functional.one_hot(batch_skills.long(), cfg.num_skills).float()
+                with torch.no_grad(): 
+                    skill_one_hot = torch.nn.functional.one_hot(skill, cfg.num_skills).unsqueeze(0).float()
+                    action_dist = actor(torch.concat([torch.from_numpy(states).float(), skill_one_hot], dim=-1))
+                    u = action_dist.rsample()
+                    actions = torch.tanh(u) 
 
-            if sample_size == cfg.minibatch_size:
-
-                with torch.no_grad():
-                    discriminator_logits = discriminator(batch_next_states)
-                    discriminator_logq = torch.log_softmax(discriminator_logits, dim=-1).gather(-1, batch_skills.long().unsqueeze(-1)).squeeze(-1)
-                    batch_rewards = discriminator_logq - skills_distribution.log_prob(batch_skills.long())
-
-                # UPDATE Q FUNCTIONS 
-
-                # input to qfuncs is state+action
-                qfunc_input = torch.concat([batch_states, skills_one_hot, batch_actions], dim=-1)
-                qfunc1_vals = qfunc1(qfunc_input).view(sample_size)
-                qfunc2_vals = qfunc2(qfunc_input).view(sample_size)
-
-                with torch.no_grad():
-                    
-                    # comptute fresh/on-policy actions + logprobs using s_{t+1}
-                    next_dist = actor(torch.concat([batch_next_states, skills_one_hot], dim=-1))
-                    next_u = next_dist.rsample()
-                    next_actions = torch.tanh(next_u) # this is a_{t+1}
-                    # log probs from Appendix C of the SAC paper
-                    next_log_probs = next_dist.log_prob(next_u) - torch.log(1 - next_actions.pow(2) + 1e-6).sum(-1) 
-                    
-                    # SAC paper Section 6 "we use the minimum of the the soft Q-functions"
-                    qfunc_target_input = torch.concat([batch_next_states, skills_one_hot, next_actions], dim=-1)
-                    qfunc1_next_vals = target_qfunc1(qfunc_target_input).view(sample_size)
-                    qfunc2_next_vals = target_qfunc2(qfunc_target_input).view(sample_size)
-                    min_next_qvals = torch.min(qfunc1_next_vals, qfunc2_next_vals)
-
-                    # y = r + γ * ( Q(s_{t+1}, a_{t+1}) - alpha * log( π(a_{t+1}|s_{t+1}) ) )
-                    qfunc_targets = batch_rewards + cfg.gamma * (min_next_qvals - cfg.alpha * next_log_probs) * masks  
-
-                # backprop + SGD on qfuncs
-                qfunc1_loss = torch.nn.functional.mse_loss(qfunc1_vals, qfunc_targets)
-                qfunc2_loss = torch.nn.functional.mse_loss(qfunc2_vals, qfunc_targets)
-                qfunc1_optim.zero_grad()
-                qfunc1_loss.backward()
-                qfunc1_optim.step()
-                qfunc2_optim.zero_grad()
-                qfunc2_loss.backward()
-                qfunc2_optim.step()
-
-                # UPDATE ACTOR 
-
-                # compute fresh/on-policy actions + logprobs using s_t
-                states_dist = actor(torch.concat([batch_states, skills_one_hot], dim=-1))
-                states_u = states_dist.rsample()
-                states_actions = torch.tanh(states_u) # this is a_t
-                # log probs from Appendix C of the SAC paper
-                states_log_probs = states_dist.log_prob(states_u) - torch.log(1 - states_actions.pow(2) + 1e-6).sum(-1)
-
-                # SAC paper section 6 "we use the minimum of the the soft Q-functions"
-                actor_input = torch.concat([batch_states, skills_one_hot, states_actions], dim=-1)
-                qfunc1_actor = qfunc1(actor_input).view(sample_size)
-                qfunc2_actor = qfunc2(actor_input).view(sample_size)
-                min_actor_qvals = torch.min(qfunc1_actor, qfunc2_actor)
-
-                # alpha * log( π(a_t|s_t) ) - Q(s_t a_t)
-                policy_loss = -(min_actor_qvals - cfg.alpha * states_log_probs).mean()
-
-                actor_optim.zero_grad()
-                policy_loss.backward()
-                actor_optim.step()
-
-                # UPDATE TARGET NETWORKS 
-                # uses polyak / target smoothing coefficient (SAC paper section 4.2)
-                with torch.no_grad():
-                    for param, target_param in zip(qfunc1.parameters(), target_qfunc1.parameters()):
-                        target_param.mul_(1 - cfg.tau).add_(cfg.tau * param)
-
-                    for param, target_param in zip(qfunc2.parameters(), target_qfunc2.parameters()):
-                        target_param.mul_(1 - cfg.tau).add_(cfg.tau * param)
-
+                sprimes, rewards, is_terms, is_truncs, info = env.step(actions.cpu().numpy())
                 
-                discriminator_logits = discriminator(batch_next_states)
-                discriminator_loss = torch.nn.functional.cross_entropy(discriminator_logits, batch_skills.long())
-                discriminator_optim.zero_grad()
-                discriminator_loss.backward()
-                discriminator_optim.step()
+                with torch.no_grad():
+                    discriminator_logits = discriminator(torch.from_numpy(sprimes).float())
+                    discriminator_logq = torch.log_softmax(discriminator_logits, dim=-1).gather(-1, skill.view(1, 1)).squeeze(-1)
+                    diayn_rewards = discriminator_logq - skills_distribution.log_prob(skill)
 
-                stats["policy_loss"].append(policy_loss.item()); stats["qfunc1_loss"].append(qfunc1_loss.item())
-                stats["qfunc2_loss"].append(qfunc2_loss.item()); stats["discriminator_loss"].append(discriminator_loss.item())
-                stats["mean_reward"].append(batch_rewards.mean())
+                logger.log_episodes(info)
 
-        logger.log_stats({name: np.mean(loss) for name, loss in stats.items()})
-        if cfg.save_network: logger.log_network({
-            "actor": actor.state_dict(), "actor_optim": actor_optim.state_dict(),
-            "qfunc1": qfunc1.state_dict(), "qfunc1_optim": qfunc1_optim.state_dict(),
-            "qfunc2": qfunc2.state_dict(), "qfunc2_optim": qfunc2_optim.state_dict(),
-            "discriminator": discriminator.state_dict(), "discriminator_optim": discriminator_optim.state_dict(),
-        })
+                replay.add(states, actions, diayn_rewards.cpu().numpy(), skill, sprimes, is_terms, is_truncs)
+
+                # if the episode ended, a new skill needs to be chosen
+                if "episode" in info:
+                    skill = skills_distribution.sample()
+
+                states = env.reset_finished_envs(sprimes, is_terms, is_truncs)
+
+
+            # rollout finished, update time
+            stats =  {"policy_loss": [], "qfunc1_loss": [], "qfunc2_loss": [], "discriminator_loss": [], "mean_reward": []}
+            for grad_update in range(cfg.gradient_steps):
+
+                (batch_states, batch_actions, batch_rewards, batch_skills, batch_next_states, batch_is_terms, batch_is_truncs), sample_size = replay.sample(cfg.minibatch_size)
+                masks = 1 - (batch_is_terms)
+                skills_one_hot = torch.nn.functional.one_hot(batch_skills.long(), cfg.num_skills).float()
+
+                if sample_size == cfg.minibatch_size:
+
+                    with torch.no_grad():
+                        discriminator_logits = discriminator(batch_next_states)
+                        discriminator_logq = torch.log_softmax(discriminator_logits, dim=-1).gather(-1, batch_skills.long().unsqueeze(-1)).squeeze(-1)
+                        batch_rewards = discriminator_logq - skills_distribution.log_prob(batch_skills.long())
+
+                    # UPDATE Q FUNCTIONS 
+
+                    # input to qfuncs is state+action
+                    qfunc_input = torch.concat([batch_states, skills_one_hot, batch_actions], dim=-1)
+                    qfunc1_vals = qfunc1(qfunc_input).view(sample_size)
+                    qfunc2_vals = qfunc2(qfunc_input).view(sample_size)
+
+                    with torch.no_grad():
+                        
+                        # comptute fresh/on-policy actions + logprobs using s_{t+1}
+                        next_dist = actor(torch.concat([batch_next_states, skills_one_hot], dim=-1))
+                        next_u = next_dist.rsample()
+                        next_actions = torch.tanh(next_u) # this is a_{t+1}
+                        # log probs from Appendix C of the SAC paper
+                        next_log_probs = next_dist.log_prob(next_u) - torch.log(1 - next_actions.pow(2) + 1e-6).sum(-1) 
+                        
+                        # SAC paper Section 6 "we use the minimum of the the soft Q-functions"
+                        qfunc_target_input = torch.concat([batch_next_states, skills_one_hot, next_actions], dim=-1)
+                        qfunc1_next_vals = target_qfunc1(qfunc_target_input).view(sample_size)
+                        qfunc2_next_vals = target_qfunc2(qfunc_target_input).view(sample_size)
+                        min_next_qvals = torch.min(qfunc1_next_vals, qfunc2_next_vals)
+
+                        # y = r + γ * ( Q(s_{t+1}, a_{t+1}) - alpha * log( π(a_{t+1}|s_{t+1}) ) )
+                        qfunc_targets = batch_rewards + cfg.gamma * (min_next_qvals - cfg.alpha * next_log_probs) * masks  
+
+                    # backprop + SGD on qfuncs
+                    qfunc1_loss = torch.nn.functional.mse_loss(qfunc1_vals, qfunc_targets)
+                    qfunc2_loss = torch.nn.functional.mse_loss(qfunc2_vals, qfunc_targets)
+                    qfunc1_optim.zero_grad()
+                    qfunc1_loss.backward()
+                    qfunc1_optim.step()
+                    qfunc2_optim.zero_grad()
+                    qfunc2_loss.backward()
+                    qfunc2_optim.step()
+
+                    # UPDATE ACTOR 
+
+                    # compute fresh/on-policy actions + logprobs using s_t
+                    states_dist = actor(torch.concat([batch_states, skills_one_hot], dim=-1))
+                    states_u = states_dist.rsample()
+                    states_actions = torch.tanh(states_u) # this is a_t
+                    # log probs from Appendix C of the SAC paper
+                    states_log_probs = states_dist.log_prob(states_u) - torch.log(1 - states_actions.pow(2) + 1e-6).sum(-1)
+
+                    # SAC paper section 6 "we use the minimum of the the soft Q-functions"
+                    actor_input = torch.concat([batch_states, skills_one_hot, states_actions], dim=-1)
+                    qfunc1_actor = qfunc1(actor_input).view(sample_size)
+                    qfunc2_actor = qfunc2(actor_input).view(sample_size)
+                    min_actor_qvals = torch.min(qfunc1_actor, qfunc2_actor)
+
+                    # alpha * log( π(a_t|s_t) ) - Q(s_t a_t)
+                    policy_loss = -(min_actor_qvals - cfg.alpha * states_log_probs).mean()
+
+                    actor_optim.zero_grad()
+                    policy_loss.backward()
+                    actor_optim.step()
+
+                    # UPDATE TARGET NETWORKS 
+                    # uses polyak / target smoothing coefficient (SAC paper section 4.2)
+                    with torch.no_grad():
+                        for param, target_param in zip(qfunc1.parameters(), target_qfunc1.parameters()):
+                            target_param.mul_(1 - cfg.tau).add_(cfg.tau * param)
+
+                        for param, target_param in zip(qfunc2.parameters(), target_qfunc2.parameters()):
+                            target_param.mul_(1 - cfg.tau).add_(cfg.tau * param)
+
+                    
+                    discriminator_logits = discriminator(batch_next_states)
+                    discriminator_loss = torch.nn.functional.cross_entropy(discriminator_logits, batch_skills.long())
+                    discriminator_optim.zero_grad()
+                    discriminator_loss.backward()
+                    discriminator_optim.step()
+
+                    stats["policy_loss"].append(policy_loss.item()); stats["qfunc1_loss"].append(qfunc1_loss.item())
+                    stats["qfunc2_loss"].append(qfunc2_loss.item()); stats["discriminator_loss"].append(discriminator_loss.item())
+                    stats["mean_reward"].append(batch_rewards.mean())
+
+            logger.log_stats({name: np.mean(loss) for name, loss in stats.items()})
+            if cfg.save_network: logger.log_network({
+                "actor": actor.state_dict(), "actor_optim": actor_optim.state_dict(),
+                "qfunc1": qfunc1.state_dict(), "qfunc1_optim": qfunc1_optim.state_dict(),
+                "qfunc2": qfunc2.state_dict(), "qfunc2_optim": qfunc2_optim.state_dict(),
+                "discriminator": discriminator.state_dict(), "discriminator_optim": discriminator_optim.state_dict(),
+            })
+    
+    else:
+
+        # in eval mode, iterate through skills and 
+        # act using them for 1 episode each
+        for skill in range(cfg.num_skills):
+            print(f"acting skill {skill}")
+            states, _ = env.reset()
+            done = False
+            
+            while not done:
+
+                with torch.no_grad(): 
+                    skill_one_hot = torch.nn.functional.one_hot(torch.tensor(skill), cfg.num_skills).unsqueeze(0).float()
+                    action_dist = actor(torch.concat([torch.from_numpy(states).float(), skill_one_hot], dim=-1))
+                    u = action_dist.rsample()
+                    actions = torch.tanh(u)
+
+                sprimes, rewards, is_terms, is_truncs, info = env.step(actions.cpu().numpy())
+
+                # if the episode ended, a new skill needs to be chosen
+                if "episode" in info:
+                    done = True
+
+                states = env.reset_finished_envs(sprimes, is_terms, is_truncs)
+
 
 @hydra.main(config_path="../../params", config_name="diayn", version_base=None)
 def main(cfg: DictConfig):

@@ -4,9 +4,19 @@ hydra:
   run:
     dir: "results/logs/${title}_${now:%H%M%S}"
 
-env_name: "Pendulum-v1"
+env_name: "ThrustEnv"
 env_kwargs:
   render_mode:
+
+  obs_type: "game_state"
+  max_steps: 250 
+  num_scanners: 20 
+  game_level: 1 
+  aggro: 0
+  exploring_starts: False 
+  reverse_gravity: False 
+  display_scale: 1
+  action_space: "continuous"
 
 num_envs: 1
 wrappers:
@@ -14,16 +24,17 @@ wrappers:
 
 save_network: True 
 seed: 1
+do_eval: False 
 timesteps: 10_000_000
-lr: 0.001
-replay_size: 100_000
-minibatch_size: 64 
-update_freq: 256 
-gradient_steps: 128
+lr: 0.0003
+replay_size: 500_000
+minibatch_size: 256 
+update_freq: 1 
+gradient_steps: 1 
 warmup_steps: 1000
 gamma: 0.99
 alpha: 0.1
-num_skills: 50
+num_skills: 20
 tau: 0.005
 cgn: 0.5
 load_path:
