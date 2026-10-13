@@ -310,7 +310,11 @@ def train(cfg: DictConfig, hydra_dir: str):
 
         # in eval mode, iterate through skills and 
         # act using them for 1 episode each
-        for skill in range(cfg.num_skills):
+
+        # skills_to_watch = [i for i in range(cfg.num_skills)]
+        skills_to_watch = [0, 10, 13, 17]
+
+        for skill in skills_to_watch:
             print(f"acting skill {skill}")
             states, _ = env.reset()
             done = False
