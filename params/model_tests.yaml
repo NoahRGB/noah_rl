@@ -1,0 +1,151 @@
+title: "forward_model_tests"
+
+hydra:
+  run:
+    dir: "results/logs/${title}_${now:%H%M%S}"
+
+env_name: "ThrustEnv"
+env_kwargs:
+  render_mode:
+
+  obs_type: "screen_pixels" #game_state
+  max_steps: 400 
+  num_scanners: 20 
+  game_level: -1 
+  aggro: 0
+  exploring_starts: True 
+  reverse_gravity: True 
+  display_scale: 1
+  action_space: "continuous"
+
+num_envs: 1
+wrappers:
+  greyscale:
+    keep_dim: False
+  resize:
+    shape: [84,84]
+  frame_stack:
+    stack_size: 4
+
+save_network: False 
+seed: 1
+timesteps: 1000 
+lr: 0.001
+replay_size: 100_000
+minibatch_size: 64 
+update_freq: 256 
+gradient_steps: 128
+warmup_steps: 0
+gamma: 0.99
+alpha_start: 0.1
+auto_alpha: True
+tau: 0.005
+cgn: 0.5
+load_path:
+
+network_architecture:
+  # qnet_enc:
+  #   - type: "LINEAR"
+  #     in: "IN"
+  #     out: 256
+  #     activation: "RELU"
+  #   - type: "LINEAR"
+  #     in: 256
+  #     out: 256
+  #     activation: "RELU"
+  #
+  # actor_enc:
+  #   - type: "LINEAR"
+  #     in: "IN"
+  #     out: 256
+  #     activation: "RELU"
+  #   - type: "LINEAR"
+  #     in: 256
+  #     out: 256
+  #     activation: "RELU"
+  #
+  # forward_model:
+  #   - type: "LINEAR"
+  #     in: "IN"
+  #     out: 256
+  #     activation: "RELU"
+  #   - type: "LINEAR"
+  #     in: 256
+  #     out: 256
+  #     activation: "RELU"
+  
+
+  qnet_enc:
+    - type: "CONV"
+      in: "IN"
+      out: 32
+      kernel: 8
+      stride: 4
+      activation: "RELU"
+    - type: "CONV"
+      in: 32 
+      out: 64 
+      kernel: 4
+      stride: 2
+      activation: "RELU"
+    - type: "CONV"
+      in: 64 
+      out: 64 
+      kernel: 3
+      stride: 1
+      activation: "RELU"
+    - type: "FLATTEN"
+    - type: "LINEAR"
+      in: 3136 
+      out: 512 
+      activation: "RELU"   
+
+  actor_enc:
+    - type: "CONV"
+      in: "IN"
+      out: 32
+      kernel: 8
+      stride: 4
+      activation: "RELU"
+    - type: "CONV"
+      in: 32 
+      out: 64 
+      kernel: 4
+      stride: 2
+      activation: "RELU"
+    - type: "CONV"
+      in: 64 
+      out: 64 
+      kernel: 3
+      stride: 1
+      activation: "RELU"
+    - type: "FLATTEN"
+    - type: "LINEAR"
+      in: 3136 
+      out: 512 
+      activation: "RELU"    
+
+  forward_model:
+    - type: "CONV"
+      in: "IN"
+      out: 32
+      kernel: 8
+      stride: 4
+      activation: "RELU"
+    - type: "CONV"
+      in: 32 
+      out: 64 
+      kernel: 4
+      stride: 2
+      activation: "RELU"
+    - type: "CONV"
+      in: 64 
+      out: 64 
+      kernel: 3
+      stride: 1
+      activation: "RELU"
+    - type: "FLATTEN"
+    - type: "LINEAR"
+      in: 3136 
+      out: 512 
+      activation: "RELU" 
