@@ -13,10 +13,8 @@ parameters are in `params/` (using [Hydra](https://hydra.cc/docs/intro/) .yaml f
 minor utils are in `noah_rl/utils` (e.g. logging, basic [PyTorch](https://pytorch.org/) network building, etc.)
 
 
-any algorithm can be run with `python -m noah_rl.algorithms.NAME` (e.g. `noah_rl.algorithms.ppo`)
-
-
 algorithms will use their corresponding .yaml file from `params/`
 
+any algorithm can be run with `python run.py NAME title="` (e.g. `python run.py ppo title="ppo tests"`)
 
-individual params can be overwritten as arguments, e.g. `python -m noah_rl.algorithms.dqn replay_size=1000`
+individual params can be overwritten as arguments, e.g. `python run.py ppo title="ppo tests" lr=0.001 minibatch_size=32`

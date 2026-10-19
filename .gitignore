@@ -5,8 +5,8 @@ logs/
 outputs/
 output/
 runs/
-clear_logs.sh
-
+*.sh
+dashboard.py
 
 
 

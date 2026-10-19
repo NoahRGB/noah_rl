@@ -1,19 +1,13 @@
-title: "sactests"
-
-hydra:
-  run:
-    dir: "results/logs/${title}_${now:%H%M%S}"
-
 env_name: "ThrustEnv"
 env_kwargs:
   render_mode:
 
   obs_type: "screen_pixels" # game_state
-  max_steps: 400 
+  max_steps: 450 
   num_scanners: 20 
-  game_level: 1 
+  game_level: -1
   aggro: 0
-  exploring_starts: False 
+  exploring_starts: True 
   reverse_gravity: False 
   display_scale: 1
   action_space: "continuous"
@@ -68,7 +62,6 @@ network_architecture:
       out: 512 
       activation: "RELU"   
     
-  
   qnet_enc:
     - type: "LINEAR"
       in: "IN"

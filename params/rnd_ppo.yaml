@@ -1,9 +1,3 @@
-title: "testing"
-
-hydra:
-  run:
-    dir: "results/logs/${title}_${now:%H%M%S}"
-
 env_name: "ThrustEnv"
 env_kwargs:
   render_mode: 
