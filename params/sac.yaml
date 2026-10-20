@@ -36,6 +36,9 @@ auto_alpha: True
 tau: 0.005
 load_path:
 
+eval:
+  warmup_steps: 0
+
 network_architecture:
   shared_enc:
     - type: "CONV"

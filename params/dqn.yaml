@@ -34,6 +34,13 @@ gamma: 0.99
 cgn: 0.5
 load_path:
 
+eval:
+  warmup_steps: 0
+  epsilon_scheduler:
+    params:
+      start_value: 0.04
+      end_value: 0.04
+
 network_architecture:
   qnet_enc:
     - type: "LINEAR"

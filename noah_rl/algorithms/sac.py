@@ -6,7 +6,6 @@
 #
 
 from collections import deque
-import hydra
 from omegaconf import DictConfig
 import torch
 import numpy as np
@@ -277,12 +276,3 @@ def train(cfg: DictConfig, hydra_dir: str):
             "critic_optim": critic_optim.state_dict(),
             "log_alpha": 0 if not cfg.auto_alpha else log_alpha.item(), "alpha_optim": 0 if not cfg.auto_alpha else alpha_optim.state_dict() 
         })
-
-@hydra.main(config_path="../../params", config_name="sac", version_base=None)
-def main(cfg: DictConfig):
-    run_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    train(cfg, run_dir)
-
-if __name__ == "__main__":
-    main()
-

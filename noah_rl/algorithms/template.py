@@ -5,7 +5,6 @@
 # (see noah_rl/params/)
 #
 
-import hydra
 from omegaconf import DictConfig
 
 from noah_rl.utils.utils import seed
@@ -24,12 +23,3 @@ def train(cfg: DictConfig, hydra_dir: str):
     for rollout in range(num_rollouts):
         actions = env.action_space.sample() 
         sprimes, rewards, is_terms, is_truncs, info = env.step(actions)
-
-
-@hydra.main(config_path="../../params", config_name="alg", version_base=None)
-def main(cfg: DictConfig):
-    run_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    train(cfg, run_dir)
-
-if __name__ == "__main__":
-    main()

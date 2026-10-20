@@ -5,7 +5,6 @@
 # (see noah_rl/params/ppo.yaml)
 #
 
-import hydra
 from omegaconf import DictConfig
 import gymnasium as gym
 import torch
@@ -17,8 +16,9 @@ from noah_rl.utils.networks import Encoder, detect_head
 from noah_rl.utils.logging import Logger
 
 class ActorCriticNetwork(torch.nn.Module):
-    def __init__(self, architecture: dict, state_dim: tuple, action_space: gym.Space):
+    def __init__(self, architecture: dict, state_dim: tuple, action_space: gym.Space, inp_scale: float):
         super(ActorCriticNetwork, self).__init__()
+        self.inp_scale = inp_scale
 
         if "shared_enc" in architecture:
             self.using_shared_enc = True
@@ -35,25 +35,28 @@ class ActorCriticNetwork(torch.nn.Module):
         self.value_head = torch.nn.Linear(self.value_enc_output, 1)
 
     def get_actor(self, inp):
+        norm_inp = inp.float() / self.inp_scale
         if self.using_shared_enc:
-            enc_out = self.shared_enc(inp)
+            enc_out = self.shared_enc(norm_inp)
         else:
-            enc_out = self.actor_enc(inp)
+            enc_out = self.actor_enc(norm_inp)
         return self.actor_head(enc_out)
     
     def get_value(self, inp):
+        norm_inp = inp.float() / self.inp_scale
         if self.using_shared_enc:
-            enc_out = self.shared_enc(inp)
+            enc_out = self.shared_enc(norm_inp)
         else:
-            enc_out = self.value_enc(inp)
+            enc_out = self.value_enc(norm_inp)
         return self.value_head(enc_out)    
 
 def train(cfg: DictConfig, hydra_dir: str):
     seed(cfg.seed)
     env = GymEnv(cfg.env_name, cfg.num_envs, seed=cfg.seed, wrappers=cfg.wrappers, **cfg.env_kwargs)
-    network = ActorCriticNetwork(cfg.network_architecture, env.state_dim, env.single_action_space)
+    network = ActorCriticNetwork(cfg.network_architecture, env.state_dim, env.single_action_space, cfg.state_scale)
     optim = torch.optim.Adam(network.parameters(), lr=cfg.lr)
     logger = Logger(cfg.num_envs, cfg.title, hydra_dir, tensorboard=True)
+    state_dtype = torch.from_numpy(np.empty(0, dtype=env.state_space.dtype)).dtype
 
     if cfg.load_path is not None:
         network_dict = torch.load(cfg.load_path, weights_only=False)
@@ -64,10 +67,10 @@ def train(cfg: DictConfig, hydra_dir: str):
     num_rollouts = cfg.timesteps // (cfg.rollout_len * cfg.num_envs)
     for rollout in range(num_rollouts):
 
-        states_buffer = torch.empty((cfg.rollout_len, cfg.num_envs, *env.state_dim), dtype=torch.float32)
+        states_buffer = torch.empty((cfg.rollout_len, cfg.num_envs, *env.state_dim), dtype=state_dtype)
         actions_buffer = torch.empty((cfg.rollout_len, cfg.num_envs, *env.action_dim), dtype=torch.float32)
         rewards_buffer = torch.empty((cfg.rollout_len, cfg.num_envs), dtype=torch.float32)
-        next_states_buffer = torch.empty((cfg.rollout_len, cfg.num_envs, *env.state_dim), dtype=torch.float32)
+        next_states_buffer = torch.empty((cfg.rollout_len, cfg.num_envs, *env.state_dim), dtype=state_dtype)
         is_terms_buffer = torch.empty((cfg.rollout_len, cfg.num_envs), dtype=torch.float32)
         dones_buffer = torch.empty((cfg.rollout_len, cfg.num_envs), dtype=torch.float32)
         logprobs_buffer = torch.empty((cfg.rollout_len, cfg.num_envs), dtype=torch.float32)
@@ -75,7 +78,7 @@ def train(cfg: DictConfig, hydra_dir: str):
         with torch.no_grad():
             # unroll over rollout_len steps and store in buffers
             for timestep in range(cfg.rollout_len):
-                action_dist = network.get_actor(torch.from_numpy(states).float())
+                action_dist = network.get_actor(torch.from_numpy(states))
                 actions = action_dist.sample()
                 sprimes, rewards, is_terms, is_truncs, info = env.step(actions.cpu().numpy())
 
@@ -153,14 +156,3 @@ def train(cfg: DictConfig, hydra_dir: str):
 
         logger.log_stats({name: np.mean(loss) for name, loss in stats.items()})
         if cfg.save_network: logger.log_network({"net": network.state_dict(), "optim": optim.state_dict()})
-
-
-
-
-@hydra.main(config_path="../../params", config_name="ppo", version_base=None)
-def main(cfg: DictConfig):
-    run_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    train(cfg, run_dir)
-
-if __name__ == "__main__":
-    main()

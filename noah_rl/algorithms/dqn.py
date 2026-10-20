@@ -6,7 +6,6 @@
 #
 
 from collections import deque
-import hydra
 from omegaconf import DictConfig
 import torch
 import numpy as np
@@ -159,14 +158,3 @@ def train(cfg: DictConfig, hydra_dir: str):
 
         logger.log_stats({name: np.mean(loss) for name, loss in stats.items()})
         if cfg.save_network: logger.log_network({"net": network.state_dict(), "target_net": target_network.state_dict(), "optim": optim.state_dict()})
-
-        
-
-@hydra.main(config_path="../../params", config_name="dqn", version_base=None)
-def main(cfg: DictConfig):
-    run_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    train(cfg, run_dir)
-
-if __name__ == "__main__":
-    main()
-

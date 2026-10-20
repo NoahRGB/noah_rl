@@ -11,7 +11,6 @@
 # (see noah_rl/params/)
 #
 
-import hydra
 from omegaconf import DictConfig
 import gymnasium as gym
 import torch
@@ -245,15 +244,3 @@ def train(cfg: DictConfig, hydra_dir: str):
                                                  "running_intrinsic_returns": running_intrinsic_returns,
                                                  "obs_normaliser": obs_normaliser.save(),
                                                  "intrinsic_normaliser": intrinsic_reward_normaliser.save()})
-
-
-
-
-@hydra.main(config_path="../../params", config_name="icm_ppo", version_base=None)
-def main(cfg: DictConfig):
-    run_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    train(cfg, run_dir)
-
-if __name__ == "__main__":
-    main()
-

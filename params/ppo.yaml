@@ -1,24 +1,25 @@
 env_name: "ThrustEnv"
 env_kwargs:
-  render_mode: 
-  obs_type: "game_state"
-  max_steps: 400 
-  num_scanners: 20 
-  game_level: -1 
+  render_mode:
+
+  obs_type: "screen_pixels"
+  max_steps: 250 
+  num_scanners: 0 
+  game_level: 1
   aggro: 0
   exploring_starts: True 
-  reverse_gravity: True 
+  reverse_gravity: False 
   display_scale: 1
-  action_space: "continuous"
+  action_space: "discrete"
 
-num_envs: 32 
+num_envs: 8 
 wrappers:
-  # greyscale:
-  #   keep_dim: False
-  # resize:
-  #   shape: [84,84]
-  # frame_stack:
-  #   stack_size: 4
+  greyscale:
+    keep_dim: False
+  resize:
+    shape: [84,84]
+  frame_stack:
+    stack_size: 4
 
 
 
@@ -35,54 +36,55 @@ wrappers:
 save_network: True
 seed: 1
 timesteps: 10_000_000
-rollout_len: 128 
-epochs: 5 
+rollout_len: 128
+state_scale: 255.0
+epochs: 3
 minibatch_size: 128 
-lr: 0.0003
+lr: 0.00025
 gamma: 0.99
 lam: 0.95
-epsilon: 0.2
-entropy_weight: 0.04
-value_weight: 0.5
+epsilon: 0.1
+entropy_weight: 0.01
+value_weight: 1.0
 cgn: 0.5
-load_path: # "results/temp/network.pt"
+load_path:
 
 network_architecture:
-  # shared_enc:
-  #   - type: "CONV"
-  #     in: "IN"
-  #     out: 16
-  #     kernel: 8
-  #     stride: 4
-  #     activation: "RELU"
-  #   - type: "CONV"
-  #     in: 16
-  #     out: 32
-  #     kernel: 4
-  #     stride: 2
-  #     activation: "RELU"
-  #   - type: "FLATTEN"
+  shared_enc:
+    - type: "CONV"
+      in: "IN"
+      out: 16
+      kernel: 8
+      stride: 4
+      activation: "RELU"
+    - type: "CONV"
+      in: 16
+      out: 32
+      kernel: 4
+      stride: 2
+      activation: "RELU"
+    - type: "FLATTEN"
+    - type: "LINEAR"
+      in: 2592
+      out: 256
+      activation: "RELU"
+
+  # actor_enc:
   #   - type: "LINEAR"
-  #     in: 2592
-  #     out: 256
-  #     activation: "RELU"
+  #     in: "IN"
+  #     out: 64
+  #     activation: "TANH"
+  #   - type: "LINEAR"
+  #     in: 64
+  #     out: 64
+  #     activation: "TANH"
 
-  actor_enc:
-    - type: "LINEAR"
-      in: "IN"
-      out: 64
-      activation: "TANH"
-    - type: "LINEAR"
-      in: 64
-      out: 64
-      activation: "TANH"
-
-  value_enc:
-    - type: "LINEAR"
-      in: "IN"
-      out: 64
-      activation: "TANH"
-    - type: "LINEAR"
-      in: 64
-      out: 64
-      activation: "TANH"
+  # value_enc:
+  #   - type: "LINEAR"
+  #     in: "IN"
+  #     out: 64
+  #     activation: "TANH"
+  #   - type: "LINEAR"
+  #     in: 64
+  #     out: 64
+  #     activation: "TANH"

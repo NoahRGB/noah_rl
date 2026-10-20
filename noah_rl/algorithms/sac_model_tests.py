@@ -5,7 +5,6 @@
 #
 
 from collections import deque
-import hydra
 from omegaconf import DictConfig
 import torch
 import numpy as np
@@ -382,12 +381,3 @@ def train(cfg: DictConfig, hydra_dir: str):
             axarr[i, j].axis("off")
             if i == 0: axarr[i, j].set_title(name)
     plt.show()
-
-@hydra.main(config_path="../../params", config_name="model_tests", version_base=None)
-def main(cfg: DictConfig):
-    run_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    train(cfg, run_dir)
-
-if __name__ == "__main__":
-    main()
-

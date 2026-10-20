@@ -33,6 +33,9 @@ tau: 0.005
 cgn: 0.5
 load_path:
 
+eval:
+  do_eval: True
+
 network_architecture:
   qnet_enc:
     - type: "LINEAR"
