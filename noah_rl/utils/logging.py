@@ -36,8 +36,12 @@ class Logger:
         self.episodic_reward = []
         self.best_mean_reward = None
         if self.tensorboard:
-           from torch.utils.tensorboard import SummaryWriter 
-           self.tb_writer = SummaryWriter(os.path.join(log_dir, "tensorboard"), flush_secs=1)
+            try:
+                from torch.utils.tensorboard import SummaryWriter
+                self.tb_writer = SummaryWriter(os.path.join(log_dir, "tensorboard"), flush_secs=1)
+            except ImportError:
+                print("tensorboard not installed, logging without it")
+                self.tensorboard = False
 
     def _set_log_path(self, log_path: str):
         if os.path.isdir(log_path):
