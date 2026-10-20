@@ -3,14 +3,26 @@ import torch
 from noah_rl.utils.gym import GymEnv
 from omegaconf import OmegaConf
 import imageio, numpy as np
+import pygame
+import sys
 
-run_dir = "./results/logs/ppo_wm_tests_20261020_133235/"
+def keys_to_action():
+    pygame.event.pump()
+    k = pygame.key.get_pressed()
+    if k[pygame.K_RSHIFT] and k[pygame.K_SPACE]: return 5
+    if k[pygame.K_RSHIFT]: return 2
+    if k[pygame.K_SPACE]:  return 3
+    if k[pygame.K_a]:      return 0
+    if k[pygame.K_s]:      return 1
+    return 4
+
+run_dir = sys.argv[1]
 device = "cpu"
 seed = 1
 
 cfg = OmegaConf.load(f"{run_dir}/.hydra/config.yaml")
 
-# cfg.env_kwargs.render_mode = "human"
+cfg.env_kwargs.render_mode = "human"
 cfg.env_kwargs.exploring_starts = False
 
 env = GymEnv(cfg.env_name, 1, seed=seed, wrappers=cfg.wrappers, **cfg.env_kwargs)
@@ -34,6 +46,8 @@ saved_actions = []
 while not done:
     action_dist = network.get_actor(torch.from_numpy(states))
     actions = action_dist.sample()
+    # actions = torch.tensor([keys_to_action()])
+
     saved_actions.append(actions)
     sprimes, rewards, is_terms, is_truncs, info = env.step(actions.cpu().numpy())
 
@@ -63,10 +77,10 @@ for real, recon, imagined in zip(saved_states[1:], saved_decoded, saved_imagined
     recon = recon[0, -1]
     imagined = imagined[0, -1]
 
-    gap = np.full((84, 2), 0.5, dtype=np.float32)   # 2px grey strip, becomes 8px after the 4x upscale
+    gap = np.full((84, 2), 0.5, dtype=np.float32)
     row = np.concatenate([real, gap, recon, gap, imagined], axis=1)
-    row = np.kron(row, np.ones((4, 4)))                            # upscale 4x so it's not tiny
+    row = np.kron(row, np.ones((4, 4)))
     frames.append((row * 255).astype(np.uint8))
 
-imageio.mimsave(f"{run_dir}/dream.gif", frames, duration=1/30, loop=0)   # gif
-imageio.mimsave(f"{run_dir}/dream.mp4", frames, fps=30)                  # mp4
+imageio.mimsave(f"{run_dir}/dream.gif", frames, duration=1/30, loop=0)
+imageio.mimsave(f"{run_dir}/dream.mp4", frames, fps=30)
