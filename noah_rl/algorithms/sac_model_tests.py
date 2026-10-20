@@ -169,7 +169,6 @@ def train(cfg: DictConfig, hydra_dir: str):
     shared_enc.to(device); target_shared_enc.to(device)
     target_shared_enc.load_state_dict(shared_enc.state_dict())
 
-
     # 1 actor, 2 Q networks (with targets)
     actor = Actor(cfg.network_architecture, networks_input, env.single_action_space).to(device)
     qfunc1 = QNet(cfg.network_architecture, networks_input, env.action_dim).to(device)
@@ -261,7 +260,6 @@ def train(cfg: DictConfig, hydra_dir: str):
                     world_model_optim.step()
 
                     logger.log_stats({})
-
 
         # rollout finished, update time
         stats =  {"policy_loss": [], "critic_loss": [], "alpha_loss": []}
@@ -359,7 +357,7 @@ def train(cfg: DictConfig, hydra_dir: str):
         })
 
 
-
+    
     # test world model
     (batch_states, batch_actions, _, batch_next_states, _, _), n = replay.sample(4, device)
     with torch.no_grad():

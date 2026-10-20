@@ -5,11 +5,11 @@ env_kwargs:
   render_mode:
 
   obs_type: "screen_pixels"
-  max_steps: 400 
-  num_scanners: 20 
+  max_steps: 250 
+  num_scanners: 0 
   game_level: 1
   aggro: 0
-  exploring_starts: False 
+  exploring_starts: True 
   reverse_gravity: False 
   display_scale: 1
   action_space: "discrete"
@@ -42,12 +42,16 @@ rollout_len: 128
 state_scale: 255.0
 epochs: 3
 minibatch_size: 128 
+
+replay_size: 50_000
+model_updates_per_rollout: 64
+
 lr: 0.00025
 gamma: 0.99
 lam: 0.95
 epsilon: 0.1
 entropy_weight: 0.01
-value_weight: 1.0
+value_weight: 0.5
 cgn: 0.5
 load_path:
 
