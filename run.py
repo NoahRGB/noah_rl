@@ -79,7 +79,7 @@ def main(cfg: DictConfig):
 
     # run the training loop, catch early quits
     try:
-        importlib.import_module(f"noah_rl.algorithms.{algo}").train(cfg, run_dir)
+        importlib.import_module(f"noah_rl.algorithms.{algo.replace('/', '.')}").train(cfg, run_dir)
     except KeyboardInterrupt:
         finish("interrupted")
         raise
@@ -98,6 +98,7 @@ if __name__ == "__main__":
     algo = sys.argv.pop(1)
     if not os.path.isfile(os.path.join(ROOT, "params", f"{algo}.yaml")):
         sys.exit(f"no config found at params/{algo}.yaml")
+    default_title = os.path.basename(algo) # the actual algorith name without the path attached
 
     # remove title arg sinc hydra doesnt need to see it
     # repeatedly prompt for title if it isnt given and use
@@ -105,11 +106,11 @@ if __name__ == "__main__":
     title = pop_arg(sys.argv, "title")
     if title is None and sys.stdin.isatty():
         while True:
-            title = input(f"title for this run (enter for '{algo}'): ").strip() or algo
+            title = input(f"title for this run (enter for '{default_title}'): ").strip() or default_title
             if re.fullmatch(r"[A-Za-z0-9_.-]+", title):
                 break
             print("title can only contain letters, numbers, _ . -")
-    title = title or algo
+    title = title or default_title
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", title):
         sys.exit(f"title '{title}' can only contain letters, numbers, _ . -")
 
@@ -119,12 +120,13 @@ if __name__ == "__main__":
     if notes is None and sys.stdin.isatty():
         notes = input("notes for this run (enter to skip): ").strip()
 
-    sys.argv.insert(1, f"--config-name={algo}")
+    sys.argv.insert(1, f"--config-path={os.path.join(ROOT, 'params', os.path.dirname(algo))}")
+    sys.argv.insert(2, f"--config-name={os.path.basename(algo)}")
 
     # stop hydra creating a .log file (annoying)
-    sys.argv.insert(2, "hydra/job_logging=none")
+    sys.argv.insert(3, "hydra/job_logging=none")
 
     # add title/rundir to the yaml configs
-    sys.argv.insert(3, f"++title={title}")
-    sys.argv.insert(4, f"hydra.run.dir=results/logs/{title}_{datetime.now():%Y%m%d_%H%M%S}")
+    sys.argv.insert(4, f"++title={title}")
+    sys.argv.insert(5, f"hydra.run.dir=results/logs/{title}_{datetime.now():%Y%m%d_%H%M%S}")
     main()

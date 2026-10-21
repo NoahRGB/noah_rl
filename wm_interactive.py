@@ -1,5 +1,5 @@
 import pygame
-from noah_rl.algorithms.ppo_model_tests import ActorCriticNetwork, WorldModel
+from noah_rl.algorithms.world_models.ppo_model_tests import ActorCriticNetwork, WorldModel
 import torch
 from noah_rl.utils.gym import GymEnv
 from omegaconf import OmegaConf

@@ -27,8 +27,8 @@ device: "cuda" # cpu or cuda
 timesteps: 100_000
 lr: 0.001
 replay_size: 100_000
-minibatch_size: 64 
-update_freq: 256 
+minibatch_size: 64
+update_freq: 256
 gradient_steps: 128
 warmup_steps: 0
 gamma: 0.99

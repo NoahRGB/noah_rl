@@ -82,6 +82,6 @@ if __name__ == "__main__":
     log_dir = tempfile.mkdtemp(prefix="noah_rl_watch_")
     try:
         # run the actual eval 
-        importlib.import_module(f"noah_rl.algorithms.{algo}").train(cfg, log_dir)
+        importlib.import_module(f"noah_rl.algorithms.{algo.replace('/', '.')}").train(cfg, log_dir)
     except KeyboardInterrupt:
         pass
