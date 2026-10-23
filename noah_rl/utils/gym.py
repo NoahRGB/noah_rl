@@ -9,6 +9,19 @@ import gymnasium as gym
 import numpy as np
 import ale_py
 
+class ChannelFirst(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        old = env.observation_space
+        self.observation_space = gym.spaces.Box(
+            low=np.transpose(old.low, (2, 0, 1)),
+            high=np.transpose(old.high, (2, 0, 1)),
+            dtype=old.dtype,
+        )
+
+    def observation(self, obs):
+        return np.transpose(obs, (2, 0, 1))
+
 def resizewrapper(env, shape):
     return gym.wrappers.ResizeObservation(env, tuple(shape))
 
@@ -20,6 +33,7 @@ WRAPPERS = {
     "atari": gym.wrappers.AtariPreprocessing,
     "greyscale": gym.wrappers.GrayscaleObservation,
     "resize": resizewrapper,
+    "channel_first": ChannelFirst
 }
 
 gym.register(

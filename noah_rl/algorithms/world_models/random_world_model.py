@@ -70,19 +70,20 @@ class WorldModel(torch.nn.Module):
         self.latent_dim = latent_dim 
 
         # the ENCODER part of the autoencoder
-        # (4, 84, 84) frame stack -> latent z
         self.encoder = torch.nn.Sequential(
-            torch.nn.Conv2d(state_dim[0], 32, kernel_size=8, stride=4),
+            torch.nn.Conv2d(state_dim[0], 32, kernel_size=4, stride=2),
             torch.nn.ReLU(),
             torch.nn.Conv2d(32, 64, kernel_size=4, stride=2),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(64, 64, kernel_size=3, stride=1),
+            torch.nn.Conv2d(64, 128, kernel_size=4, stride=2),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(128, 256, kernel_size=4, stride=2),
             torch.nn.ReLU(),
             torch.nn.Flatten(),
-            torch.nn.Linear(3136, self.latent_dim),
-            torch.nn.LayerNorm(self.latent_dim),
-            torch.nn.Tanh(),
         )
+
+        self.vae_mu_head = torch.nn.Linear(1024, self.latent_dim)
+        self.vae_sigma_head = torch.nn.Linear(1024, self.latent_dim)
 
         # the PREDICTION part of the world model
         # take latent representation z + action and predict
@@ -100,18 +101,26 @@ class WorldModel(torch.nn.Module):
         )
 
         # the DECODER part of the autoencoder
-        # latent z -> (1, 84, 84) single frame
         self.decoder = torch.nn.Sequential(
-            torch.nn.Linear(self.latent_dim, 3136),
+            torch.nn.Linear(self.latent_dim, 1024),
             torch.nn.ReLU(),
-            torch.nn.Unflatten(-1, unflattened_size=(64, 7, 7)),
-            torch.nn.ConvTranspose2d(in_channels=64, out_channels=64, kernel_size=3, stride=1),
+            torch.nn.Unflatten(-1, unflattened_size=(256, 2, 2)),
+            torch.nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=4, stride=2),
+            torch.nn.ReLU(),
+            torch.nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, stride=2),
             torch.nn.ReLU(),
             torch.nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2),
             torch.nn.ReLU(),
-            torch.nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=8, stride=4),
+            torch.nn.ConvTranspose2d(in_channels=32, out_channels=3, kernel_size=6, stride=2),
             torch.nn.Sigmoid(),
         )
+
+    def vae(self, inp):
+        enc_out = self.encoder(inp)
+        mu = self.vae_mu_head(enc_out)
+        sigma = self.vae_sigma_head(enc_out)
+        dist = torch.distributions.Normal(mu, sigma)
+        return dist
 
 
 def train(cfg: DictConfig, hydra_dir: str):
@@ -153,7 +162,7 @@ def train(cfg: DictConfig, hydra_dir: str):
                 batch_states = batch_states.float() / cfg.state_scale
                 batch_next_states = batch_next_states.float() / cfg.state_scale
                 actions_one_hot = torch.nn.functional.one_hot(batch_actions.long(), num_classes=env.single_action_space.n).float()
-                
+
                 z = world_model.encoder(batch_states)
                 z_next = world_model.encoder(batch_next_states)
                 z_next_pred = world_model.predictor(torch.cat([z, actions_one_hot], -1))

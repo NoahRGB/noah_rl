@@ -14,14 +14,16 @@ env_kwargs:
 
 num_envs: 1
 wrappers:
-  greyscale:
-    keep_dim: False
+  # greyscale:
+  #   keep_dim: False
   resize:
-    shape: [84,84]
-  frame_stack:
-    stack_size: 4
+    shape: [64,64]
+  channel_first:
 
-save_network: True 
+  # frame_stack:
+  #   stack_size: 4
+
+save_network: False 
 save_interval: 1000 # timesteps between checkpoints
 load_path:
 seed: 1
