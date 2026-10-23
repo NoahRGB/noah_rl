@@ -1,5 +1,6 @@
 import pygame
-from noah_rl.algorithms.world_models.ppo_model_tests import ActorCriticNetwork, WorldModel
+# from noah_rl.algorithms.world_models.ppo_model_tests import ActorCriticNetwork, WorldModel
+from noah_rl.algorithms.world_models.random_world_model import WorldModel
 import torch
 from noah_rl.utils.gym import GymEnv
 from omegaconf import OmegaConf
@@ -28,7 +29,7 @@ cfg.env_kwargs.exploring_starts = False
 env = GymEnv(cfg.env_name, 1, seed=seed, wrappers=cfg.wrappers, **cfg.env_kwargs)
 
 
-world_model = WorldModel({}, env.action_dim, env.state_dim, env.single_action_space).to(device)
+world_model = WorldModel({}, env.action_dim, env.state_dim, env.single_action_space, cfg.latent_dim).to(device)
 
 
 checkpoint = torch.load(f"{run_dir}/network.pt", map_location=device, weights_only=False)
