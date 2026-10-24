@@ -8,10 +8,54 @@ from omegaconf import DictConfig
 import torch
 import gymnasium as gym
 import numpy as np
+from collections import deque
 
 from noah_rl.utils.utils import seed
 from noah_rl.utils.gym import GymEnv
 from noah_rl.utils.logging import Logger
+
+
+class EpisodicReplayMemory:
+    # stores whole episodes and samples windows within the stored
+    # episodes
+    def __init__(self, size: int, state_dim: tuple, action_dim: tuple, state_dtype):
+        self.max_size = size
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.state_dtype = state_dtype
+
+        self.episodes = deque()
+        self.total_stored_timesteps = 0
+
+    def add(self, states, actions, rewards, next_states):
+        new_episode_length = states.shape[0]
+        while self.episodes and self.total_stored_timesteps + new_episode_length > self.max_size:
+            removed_ep = self.episodes.popleft()
+            self.total_stored_timesteps -= removed_ep[0].shape[0]
+
+        self.total_stored_timesteps += new_episode_length
+        self.episodes.append((states, actions, rewards, next_states))
+
+    def sample(self, count, window_size, device):
+        lengths = np.array([ep[0].shape[0] - window_size + 1 for ep in self.episodes])
+        valid = np.clip(lengths, 0, None)
+
+        if valid.sum() == 0:
+            return tuple(), 0
+
+        probs = valid / valid.sum()
+        idx = np.random.choice(len(self.episodes), size=count, p=probs)
+
+        windows = []
+        for i in idx: 
+            episode = self.episodes[i]
+            episode_len = episode[0].shape[0]
+            start_idx = np.random.randint(0, valid[i])
+            windows.append(tuple([arr[start_idx:start_idx+window_size] for arr in episode]))
+
+        return tuple(torch.from_numpy(np.stack(field)).to(device) for field in zip(*windows)), count 
+
+
 
 
 class ReplayMemory:
@@ -64,10 +108,12 @@ class ReplayMemory:
 
 
 class WorldModel(torch.nn.Module):
-    def __init__(self, architecture: dict, action_dim: tuple, state_dim: tuple, action_space: gym.Space, latent_dim: int):
+    def __init__(self, architecture: dict, action_dim: tuple, state_dim: tuple, action_space: gym.Space, latent_dim: int, hidden_dim: int):
         super(WorldModel, self).__init__()
 
+        self.hidden_dim = hidden_dim 
         self.latent_dim = latent_dim 
+        action_input_size = action_space.n if isinstance(action_space, gym.spaces.Discrete) else action_space.shape[0]
 
         # the ENCODER part of the autoencoder
         self.encoder = torch.nn.Sequential(
@@ -79,46 +125,54 @@ class WorldModel(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Conv2d(128, 256, kernel_size=4, stride=2),
             torch.nn.ReLU(),
-            torch.nn.Flatten(),
+            torch.nn.Flatten(), # 1024
         )
 
-        self.vae_mu_head = torch.nn.Linear(1024, self.latent_dim)
-        self.vae_sigma_head = torch.nn.Linear(1024, self.latent_dim)
+        self.posterior_net = torch.nn.Sequential(
+            torch.nn.Linear(1024+self.hidden_dim, 256),
+            torch.nn.ReLU(),
+        )
+        self.posterior_mu_head = torch.nn.Linear(256, self.latent_dim)
+        self.posterior_sigma_head = torch.nn.Linear(256, self.latent_dim)
 
-        # the PREDICTION part of the world model
-        # take latent representation z + action and predict
-        # the next latent z
+        # h_t = f(h_{t-1}, s_{t-1}, a_{t-1})
+        self.rnn = torch.nn.GRUCell(self.latent_dim+action_input_size, self.hidden_dim)
 
-        action_input_size = action_space.n if isinstance(action_space, gym.spaces.Discrete) else action_space.shape[0]
-        self.predictor = torch.nn.Sequential(
-            torch.nn.Linear(self.latent_dim+action_input_size, 256),
+
+        self.prior_net = torch.nn.Sequential(
+            torch.nn.Linear(self.hidden_dim, 256),
             torch.nn.ReLU(),
             torch.nn.Linear(256, 256),
             torch.nn.ReLU(),
-            torch.nn.Linear(256, self.latent_dim),
-            torch.nn.LayerNorm(self.latent_dim),
-            torch.nn.Tanh(),
         )
+        self.prior_mu_head = torch.nn.Linear(256, self.latent_dim)
+        self.prior_sigma_head = torch.nn.Linear(256, self.latent_dim)
 
         # the DECODER part of the autoencoder
         self.decoder = torch.nn.Sequential(
-            torch.nn.Linear(self.latent_dim, 1024),
+            torch.nn.Linear(self.latent_dim+self.hidden_dim, 1024),
+            torch.nn.Unflatten(-1, unflattened_size=(1024, 1, 1)),
+            torch.nn.ConvTranspose2d(in_channels=1024, out_channels=128, kernel_size=5, stride=2),
             torch.nn.ReLU(),
-            torch.nn.Unflatten(-1, unflattened_size=(256, 2, 2)),
-            torch.nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=4, stride=2),
+            torch.nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=5, stride=2),
             torch.nn.ReLU(),
-            torch.nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, stride=2),
-            torch.nn.ReLU(),
-            torch.nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2),
+            torch.nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=6, stride=2),
             torch.nn.ReLU(),
             torch.nn.ConvTranspose2d(in_channels=32, out_channels=3, kernel_size=6, stride=2),
             torch.nn.Sigmoid(),
         )
 
-    def vae(self, inp):
-        enc_out = self.encoder(inp)
-        mu = self.vae_mu_head(enc_out)
-        sigma = self.vae_sigma_head(enc_out)
+    def posterior(self, inp):
+        net_out = self.posterior_net(inp)
+        mu = self.posterior_mu_head(net_out)
+        sigma = torch.nn.functional.softplus(self.posterior_sigma_head(net_out)) + 0.1
+        dist = torch.distributions.Normal(mu, sigma)
+        return dist
+
+    def prior(self, h):
+        net_out = self.prior_net(h)
+        mu = self.prior_mu_head(net_out)
+        sigma = torch.nn.functional.softplus(self.prior_sigma_head(net_out)) + 0.1
         dist = torch.distributions.Normal(mu, sigma)
         return dist
 
@@ -130,17 +184,22 @@ def train(cfg: DictConfig, hydra_dir: str):
     logger = Logger(cfg.num_envs, cfg.title, hydra_dir, tensorboard=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    world_model = WorldModel(cfg.network_architecture, env.action_dim, env.state_dim, env.single_action_space, cfg.latent_dim).to(device)
+    world_model = WorldModel(cfg.network_architecture, env.action_dim, env.state_dim, env.single_action_space, cfg.latent_dim, cfg.hidden_dim).to(device)
     world_model_optim = torch.optim.Adam(world_model.parameters(), lr=cfg.lr)
     
-    replay = ReplayMemory(size=cfg.replay_size, state_dim=env.state_dim, action_dim=env.action_dim, state_dtype=env.single_state_space.dtype)
+    # replay = ReplayMemory(size=cfg.replay_size, state_dim=env.state_dim, action_dim=env.action_dim, state_dtype=env.single_state_space.dtype)
+    replay = EpisodicReplayMemory(size=cfg.replay_size, state_dim=env.state_dim, action_dim=env.action_dim, state_dtype=env.single_state_space.dtype)
 
     if cfg.load_path is not None:
         network_dict = torch.load(cfg.load_path, map_location=device, weights_only=False)
         world_model.load_state_dict(network_dict["world_model"])
-        # checkpoints from plain ppo won't have a world model optim
         if "world_model_optim" in network_dict:
             world_model_optim.load_state_dict(network_dict["world_model_optim"])
+
+    episodic_states, episodic_rewards, episodic_actions, episodic_next_states = [], [], [], []
+
+    stat_names = ["world_model_loss", "reconstruction_loss", "reconstruction_mse", "kl", "kl_loss", "prior_std", "posterior_std"]
+    stats = {name: [] for name in stat_names}
 
     states, _ = env.reset()
     for timestep in range(cfg.timesteps):
@@ -149,41 +208,77 @@ def train(cfg: DictConfig, hydra_dir: str):
 
         logger.log_episodes(info)
 
-        replay.add(states, actions, rewards, sprimes, is_terms, is_truncs)
+        episodic_states.append(states[0])
+        episodic_rewards.append(rewards[0])
+        episodic_actions.append(actions[0])
+        episodic_next_states.append(sprimes[0])
+
+        if "episode" in info:
+            # when episode ends, store whole episoide
+            replay.add(
+                np.array(episodic_states),
+                np.array(episodic_actions),
+                np.array(episodic_rewards),
+                np.array(episodic_next_states),
+            )
+            episodic_states, episodic_rewards, episodic_actions, episodic_next_states = [], [], [], []
 
         states = env.reset_finished_envs(sprimes, is_terms, is_truncs)
 
         # update world model
         if timestep % cfg.world_model_update_interval == 0:
 
-            (batch_states, batch_actions, _, batch_next_states, _, _), sample_size = replay.sample(cfg.minibatch_size, device)
+            windows, sample_size = replay.sample(cfg.minibatch_size, cfg.window_size, device)
             if sample_size == cfg.minibatch_size:
+                batch_states, batch_actions, batch_rewards, batch_next_states = windows # (minibatch_size, window_size, ..., )
 
                 batch_states = batch_states.float() / cfg.state_scale
                 batch_next_states = batch_next_states.float() / cfg.state_scale
                 actions_one_hot = torch.nn.functional.one_hot(batch_actions.long(), num_classes=env.single_action_space.n).float()
+                actions_shifted = torch.cat([torch.zeros_like(actions_one_hot[:, :1]), actions_one_hot[:, :-1]], dim=1)
 
-                z = world_model.encoder(batch_states)
-                z_next = world_model.encoder(batch_next_states)
-                z_next_pred = world_model.predictor(torch.cat([z, actions_one_hot], -1))
+                encoded = world_model.encoder(batch_states.flatten(0, 1)).unflatten(0, (cfg.minibatch_size, cfg.window_size))
+                hidden_state = torch.zeros(cfg.minibatch_size, cfg.hidden_dim).to(device)
+                latent = torch.zeros(cfg.minibatch_size, cfg.latent_dim).to(device)
 
-                # how good is the decoder at decoding s_t --> z_t back into z_t --> s_t?
-                decoder_loss = ((world_model.decoder(z) - batch_states[:, -1:])**2).mean()
+                latents, hidden_states, prior_mus, prior_stddevs, posterior_mus, posterior_stddevs = [], [], [], [], [], []
+                for t in range(cfg.window_size):
+                    hidden_state = world_model.rnn(torch.cat([latent, actions_shifted[:, t]], dim=-1), hidden_state)
+                    prior = world_model.prior(hidden_state)
+                    posterior = world_model.posterior(torch.cat([hidden_state, encoded[:, t]], dim=-1))
+                    latent = posterior.rsample()
 
-                # how good is the model "end to end"? reconstruct the prediction of s_{t+1} from latent space
-                # z using the decoder
-                predictor_loss = ((world_model.decoder(z_next_pred) - batch_next_states[:, -1:])**2).mean()
+                    hidden_states.append(hidden_state); latents.append(latent)
+                    prior_mus.append(prior.mean); prior_stddevs.append(prior.stddev)
+                    posterior_mus.append(posterior.mean); posterior_stddevs.append(posterior.stddev)
 
-                # how accurate is the "prediction" part of the model? the error in the prediction of latent z
-                latent_loss = ((z_next_pred - z_next.detach())**2).mean()
+                hidden_states = torch.stack(hidden_states, 1)
+                latents = torch.stack(latents, 1)
+                priors = torch.distributions.Normal(torch.stack(prior_mus, 1), torch.stack(prior_stddevs, 1))
+                posteriors = torch.distributions.Normal(torch.stack(posterior_mus, 1), torch.stack(posterior_stddevs, 1))
 
-                world_model_loss = decoder_loss + predictor_loss + latent_loss
+                reconstructions = torch.distributions.Normal(world_model.decoder(torch.cat([latents, hidden_states], dim=-1).flatten(0, 1)), cfg.recon_std)
+                reconstruction_loss = -reconstructions.log_prob(batch_states.flatten(0, 1)).sum((1, 2, 3)).mean()
+                kl = torch.distributions.kl_divergence(posteriors, priors).sum(-1)
+                kl_loss = torch.clamp(kl, min=3.0).mean()
+
+                world_model_loss = reconstruction_loss + kl_loss
+                    
                 world_model_optim.zero_grad()
                 world_model_loss.backward()
                 world_model_optim.step()
 
-                logger.log_stats({"world_model_loss": world_model_loss.item(), "decoder_loss": decoder_loss.item(),
-                                  "predictor_loss": predictor_loss.item(), "latent_loss": latent_loss.item()})
+                stats["world_model_loss"].append(world_model_loss.item())
+                stats["reconstruction_loss"].append(reconstruction_loss.item())
+                stats["reconstruction_mse"].append(((reconstructions.mean - batch_states.flatten(0, 1)) ** 2).mean().item())
+                stats["kl"].append(kl.mean().item())
+                stats["kl_loss"].append(kl_loss.item())
+                stats["prior_std"].append(priors.stddev.mean().item())
+                stats["posterior_std"].append(posteriors.stddev.mean().item())
+
+        if timestep % cfg.log_interval == 0 and len(stats["world_model_loss"]) > 0:
+            logger.log_stats({name: np.mean(stat) for name, stat in stats.items()})
+            stats = {name: [] for name in stat_names}
 
         if cfg.save_network and timestep % cfg.save_interval == 0: logger.log_network({
             "world_model": world_model.state_dict(), "world_model_optim": world_model_optim.state_dict(),
