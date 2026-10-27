@@ -1,16 +1,16 @@
-env_name: "ALE/Pacman-v5"
+env_name: "ThrustEnv"
 env_kwargs:
   render_mode:
 
-  # obs_type: "screen_pixels" # game_state
-  # max_steps: 300 
-  # num_scanners: 0 
-  # game_level: 1 
-  # aggro: 0
-  # exploring_starts: True 
-  # reverse_gravity: False 
-  # display_scale: 1
-  # action_space: "discrete"
+  obs_type: "screen_pixels" # game_state
+  max_steps: 300 
+  num_scanners: 0 
+  game_level: 1 
+  aggro: 0
+  exploring_starts: True 
+  reverse_gravity: False 
+  display_scale: 1
+  action_space: "discrete"
 
 num_envs: 1
 wrappers:
@@ -23,7 +23,7 @@ wrappers:
   # frame_stack:
   #   stack_size: 4
 
-save_network: True 
+save_network: False 
 save_interval: 1000
 log_interval: 100
 load_path:
@@ -38,6 +38,7 @@ world_model_update_interval: 1
 latent_dim: 50
 hidden_dim: 200
 window_size: 10
-recon_std: 0.1
-
+recon_std: 1.0
+kl_beta: 0.1
+inverse_loss_weight: 10.0
 network_architecture:

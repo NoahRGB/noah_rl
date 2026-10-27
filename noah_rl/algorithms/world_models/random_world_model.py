@@ -162,6 +162,14 @@ class WorldModel(torch.nn.Module):
             torch.nn.Sigmoid(),
         )
 
+        self.inverse_predictor = torch.nn.Sequential(
+            torch.nn.Linear(1024+1024, 256),
+            torch.nn.ReLU(),
+            torch.nn.Linear(256, 256),
+            torch.nn.ReLU(),
+            torch.nn.Linear(256, action_input_size)
+        )
+
     def posterior(self, inp):
         net_out = self.posterior_net(inp)
         mu = self.posterior_mu_head(net_out)
@@ -262,7 +270,10 @@ def train(cfg: DictConfig, hydra_dir: str):
                 kl = torch.distributions.kl_divergence(posteriors, priors).sum(-1)
                 kl_loss = torch.clamp(kl, min=3.0).mean()
 
-                world_model_loss = reconstruction_loss + kl_loss
+                inverse_predictions = world_model.inverse_predictor(torch.cat([encoded[:, :-1], encoded[:, 1:]], -1))
+                inverse_loss = torch.nn.functional.cross_entropy(inverse_predictions.flatten(0, 1), batch_actions[:, :-1].flatten().long())
+
+                world_model_loss = reconstruction_loss + cfg.kl_beta * kl_loss + cfg.inverse_loss_weight * inverse_loss
                     
                 world_model_optim.zero_grad()
                 world_model_loss.backward()
